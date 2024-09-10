@@ -69,14 +69,12 @@ class Act(nn.Module):
 
 class Train():
     def __init__(self, 
-            motor_num=12,
             data_sample_freq=100,
             datafile_dir=None,
             load_pretrained_model=False,
             device="cpu",
             **kwargs
             ):
-        self.motor_num = motor_num
         self.data_sample_freq = data_sample_freq
         if(os.path.isfile(datafile_dir)):
             self.datafile_dir = os.path.dirname(datafile_dir)
@@ -265,7 +263,6 @@ if __name__=="__main__":
     kwargs={"epochs":1000, "device":"cuda:0"}
     datafile_dir =  "./app/"
     training = Train(
-            motor_num=12,
             data_sample_freq=100,
             datafile_dir = datafile_dir,
             load_pretrained_model = False,

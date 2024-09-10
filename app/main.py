@@ -25,7 +25,6 @@ class MyWindow(QMainWindow):
         #self.connectSignalSlot()
 
         # variables default values
-        self.motor_num=3
         self.motors=[2,3,4]
         self.sample_freq =100
         self.epochs =1000
@@ -388,7 +387,6 @@ class MyWindow(QMainWindow):
             if(getattr(self,'dataFileName',None) is not None):
                 self.train_worker = QTrain(
                     datafile_dir=os.path.dirname(self.dataFileName),
-                    motor_num = self.motor_num,
                     data_sample_freq = self.sample_freq,
                     epochs=self.epochs,
                     load_pretrained_model=self.load_pretrained_model
@@ -529,7 +527,6 @@ class MyWindow(QMainWindow):
             if(getattr(self,'dataFileName',None) is not None):
                 self.train_worker = QTrain(
                     datafile_dir=os.path.dirname(self.dataFileName),
-                    motor_num = self.motor_num,
                     data_sample_freq = self.sample_freq,
                     epochs=self.epochs,
                     load_pretrained_model=self.load_pretrained_model
@@ -540,12 +537,12 @@ class MyWindow(QMainWindow):
 
 
     def slot_set_model_input(self,text):
-        self.model_input = [int(idx) for idx in text.split(",")]
-        self.text_browser.append("Model input:{:}".format(text))
+        self.model_input = [idx for idx in text.split(",")]
+        self.text_browser.append("Model input: {:}".format(text))
 
     def slot_set_model_output(self,text):
-        self.model_output = [int(idx) for idx in text.split(",")]
-        self.text_browser.append("Model output:{:}".format(text))
+        self.model_output = [idx for idx in text.split(",")]
+        self.text_browser.append("Model output: {:}".format(text))
 
 
     def slot_btn_showResult(self):
@@ -627,7 +624,6 @@ class QProcessData(QThread):
 class QTrain(QThread):
     signal = pyqtSignal(str)
     def __init__(self,
-            motor_num=3,
             data_sample_freq=100,
             datafile_dir=None,
             load_pretrained_model=False,
@@ -635,8 +631,7 @@ class QTrain(QThread):
         super(QTrain,self).__init__()
 
         self.training = Train(
-            motor_num=3,
-            data_sample_freq=100,
+            data_sample_freq=data_sample_freq,
             datafile_dir = datafile_dir,
             load_pretrained_model = load_pretrained_model,
             **kwargs
