@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import QVBoxLayout, QFileDialog, QMainWindow, QTextBrowser,
 #from mainwindow import Ui_MainWindow
 from PyQt5.QtGui import QIcon
 sys.path.append(os.path.dirname(sys.path[0]))
-from data_loader import DataProcess
+from process_dataset import DataProcess
 from train import Train
 import warnings
 from tableview import QTableViewPanel
@@ -30,14 +30,14 @@ class MyWindow(QMainWindow):
         self.epochs =1000
 
         self.plot_data_len=100
-        self.plot_data_name ="jointPosition_0"
+        self.plot_data_name ="motorStateCur_0"
 
         self.data_start=3000
         self.data_end=10000
         self.load_pretrained_model= False
 
-        self.model_input = ["jcm", "jointPosition", "jointVelocity"]
-        self.model_output = ["jointCurrent"]
+        self.model_input = ["motorStatePos", "motorStateVel", "motorAction"]
+        self.model_output = ["motorStateCur"]
 
         # 创建窗口
         self.resize(1200,1000)
@@ -63,7 +63,7 @@ class MyWindow(QMainWindow):
         # btn 1
         self.btn_chooseFile = QPushButton(self)  
         self.btn_chooseFile.setObjectName("btn_chooseFile")  
-        self.btn_chooseFile.setText("加载数据")
+        self.btn_chooseFile.setText("Load Dataset")
         self.btn_chooseFile.setToolTip("点击此按钮将选择数据文件并加载数据！")
         self.btn_chooseFile.setStatusTip("点击此按钮将选择数据文件并加载数据！")
         self.btn_chooseFile.setGeometry(
@@ -77,7 +77,7 @@ class MyWindow(QMainWindow):
         # btn 2
         self.btn_displayData= QPushButton(self)
         self.btn_displayData.setObjectName("btn_displayData")  
-        self.btn_displayData.setText("显示数据")
+        self.btn_displayData.setText("Display Datasheet")
         self.btn_displayData.setToolTip("显示数据！")
         self.btn_displayData.setStatusTip("显示数据！")
         self.btn_displayData.setGeometry(
@@ -88,7 +88,7 @@ class MyWindow(QMainWindow):
         self.btn_displayData.clicked.connect(self.slot_btn_displayData)
 
         # btn3- options 0
-        label = QLabel("数据起点",parent=self)
+        label = QLabel("Start Row",parent=self)
         label.setGeometry(
                 btn_base_width,
                 btn_base_height*2,
@@ -104,7 +104,7 @@ class MyWindow(QMainWindow):
         self.lineEdit.textChanged.connect(self.slot_set_data_start)
 
         # btn3- options 1
-        label = QLabel("数据终点",parent=self)
+        label = QLabel("End Row",parent=self)
         label.setGeometry(
                 btn_base_width+220,
                 btn_base_height*2,
@@ -121,7 +121,7 @@ class MyWindow(QMainWindow):
 
 
         # btn3- options 2
-        label = QLabel("曲线长度",parent=self)
+        label = QLabel("Curver Length",parent=self)
         label.setGeometry(
                 btn_base_width,
                 btn_base_height*4,
@@ -137,7 +137,7 @@ class MyWindow(QMainWindow):
         self.lineEdit.textChanged.connect(self.slot_set_plot_data_len)
 
         # btn3- options 3
-        label = QLabel("曲线名称",parent=self)
+        label = QLabel("Curve Name",parent=self)
         label.setGeometry(
                 btn_base_width+220,
                 btn_base_height*4,
@@ -154,7 +154,7 @@ class MyWindow(QMainWindow):
 
 
         #btn 3
-        self.plot_btn = QPushButton('绘制数据', self)
+        self.plot_btn = QPushButton('Plot Data', self)
         self.plot_btn.setGeometry(
                 btn_base_width,
                 btn_base_height*6,
@@ -163,7 +163,7 @@ class MyWindow(QMainWindow):
         self.plot_btn.clicked.connect(self.slot_plot_data)
 
         #btn 4
-        self.clear_plot_btn = QPushButton('清除曲线', self)
+        self.clear_plot_btn = QPushButton('Clear Plots', self)
         self.clear_plot_btn.setGeometry(
                 btn_base_width+220,
                 btn_base_height*6,
@@ -173,7 +173,7 @@ class MyWindow(QMainWindow):
 
 
         # options 1
-        label = QLabel("训练Epoch",parent=self)
+        label = QLabel("Training Epoch",parent=self)
         label.setGeometry(
                 btn_base_width,
                 btn_base_height*7,
@@ -189,7 +189,7 @@ class MyWindow(QMainWindow):
         self.lineEdit.textChanged.connect(self.slot_set_epochs_num)
 
         # options 2
-        label = QLabel("电机序号",parent=self)
+        label = QLabel("Actuator Index",parent=self)
         label.setGeometry(
                 btn_base_width+220,
                 btn_base_height*7,
@@ -205,7 +205,7 @@ class MyWindow(QMainWindow):
         self.lineEdit.textChanged.connect(self.slot_set_motors)
 
         # options 2
-        label = QLabel("采样频率",parent=self)
+        label = QLabel("Sampling Frequency",parent=self)
         label.setGeometry(
                 btn_base_width,
                 btn_base_height*9,
@@ -222,7 +222,7 @@ class MyWindow(QMainWindow):
 
 
 
-        label = QLabel("加载模型",parent=self)
+        label = QLabel("Load Model",parent=self)
         label.setGeometry(
                 btn_base_width+220,
                 btn_base_height*9,
@@ -275,7 +275,7 @@ class MyWindow(QMainWindow):
         # btn 3
         self.btn_trainModel= QPushButton(self)
         self.btn_trainModel.setObjectName("btn_trainModel")  
-        self.btn_trainModel.setText("训练模型")
+        self.btn_trainModel.setText("Train Model")
         self.btn_trainModel.setToolTip("点击此按钮将开始训练模型！")
         self.btn_trainModel.setStatusTip("点击此按钮将开始训练模型！")
         self.btn_trainModel.setGeometry(
@@ -289,7 +289,7 @@ class MyWindow(QMainWindow):
         # btn 4
         self.btn_showResult= QPushButton(self)
         self.btn_showResult.setObjectName("btn_showResult")  
-        self.btn_showResult.setText("预测结果")
+        self.btn_showResult.setText("Estimation Result")
         self.btn_showResult.setToolTip("点击此按钮显示预测结果！")
         self.btn_showResult.setStatusTip("点击此按钮显示预测结果！")
         self.btn_showResult.setGeometry(
@@ -307,7 +307,7 @@ class MyWindow(QMainWindow):
         pg.setConfigOption('foreground', 'k')
 
         # 2
-        self.pw1= pg.PlotWidget(title="数据")
+        self.pw1= pg.PlotWidget(title="Dataset")
         self.pw1.setMinimumSize(600, 400)  # 设置最小尺寸
         self.pw1.setMaximumSize(700, 600)  # 设置最大尺寸
         self.pw1.setLabel('bottom', text='Time [s]')
@@ -315,10 +315,10 @@ class MyWindow(QMainWindow):
         #self.pw1.move(600,100)
 
         #self.plot_data = self.pw.plot(x, y, pen=None, symbol=r_symbol, symbolBrush=r_color)
-        self.pw2 = pg.PlotWidget(title="预测值")
+        self.pw2 = pg.PlotWidget(title="Estimation")
         self.pw2.setMinimumSize(600, 400)  # 设置最小尺寸
         self.pw2.setMaximumSize(700, 600)  # 设置最大尺寸
-        self.pw3 = pg.PlotWidget(title="绘制网格线")
+        self.pw3 = pg.PlotWidget(title="Plot Gird")
         # 4
 
         #self.plot_btn.clicked.connect(self.draw1)
@@ -373,8 +373,8 @@ class MyWindow(QMainWindow):
                 )
         self.dp_worker.signal.connect(self.thread_dp)
         self.dp_worker.start()
-        self.statusBar().showMessage('数据加载成功!')
-        self.text_browser.append("数据加载成功!")
+        self.statusBar().showMessage('Load dataset successfully!')
+        self.text_browser.append("Load dataset successfully!")
 
     def thread_dp(self,str):
         print(str)
@@ -382,7 +382,7 @@ class MyWindow(QMainWindow):
 
 
     def slot_btn_trainModel(self):
-        self.statusBar().showMessage('开始训练模型')
+        self.statusBar().showMessage('Start to train the model')
         if not hasattr(self,"train_worker"):
             if(getattr(self,'dataFileName',None) is not None):
                 self.train_worker = QTrain(
@@ -402,7 +402,7 @@ class MyWindow(QMainWindow):
         # train_worker
         self.train_worker.signal.connect(self.thread_train)
         self.train_worker.start()
-        self.statusBar().showMessage('模型训练完成!')
+        self.statusBar().showMessage('Finish the training!')
 
     def thread_train(self,str):
         print(str)

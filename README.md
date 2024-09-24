@@ -2,23 +2,46 @@
 
 actuator_net is a project to model actuators using  artificial neural network with deep-learning algorithm.
 
+
+Accurate modeling of real robots is crucial for developing reinforcement learning (RL)-based control systems. However, the complexities of electrical actuators make it challenging to simulate actuator dynamics accurately, resulting in a significant gap between simulated and real actuators. While domain randomization techniques can partially address this gap, finding the right randomization parameters is often difficult. As a result, poor joint movement tracking is a common issue that limits RL policy deployment in real robots and complicates training convergence.
+
+This repository introduces a user-friendly app for identifying the actuators of your real robot using artificial neural networks. By leveraging a labeled dataset collected from real actuators to train a multi-layer perceptron (MLP) network, the app estimates actuator torques based on desired position, current position, and velocity inputs. Using this network to simulate actuators can significantly reduce the sim-real actuator gap and enhance policy deployment performance. 
+
+
+A user interface was developed to simplify the training process and enhance usability, as below:
+
+
+
+<img src="./docs/actuator_net.gif" alt="actuator_net" style="zoom:150%;" />
+
+
+
+
+The training code refers to (!walk-these-way)[https://github.com/Improbable-AI/walk-these-ways.git].
+
+
+
+
 ## Repository Structure
 
-- train.py contains the code to process dataset collected from actuators
-- utils.py contains the code to build a MLP model and train the model
-- eval.py contains the code to evaluate the trained model
+- process_dataset.py contains the code to process dataset collected from actuators
+- train.py contains the code to train a MLP to model the actuators
+- test.py contains the code to test the trained model which is stored as a torch.jit.script model in a pth file
+- app/main.py to realize a UI 
+- app/tabviewe.py to display the first 20 rows of actuator dataset in a table
+- app/resources contains dataset files and trained model and scaler for normalizing features
 
 ## Installation
 
 1. Prepare a python virtual env with python3.8 or later
-2. install pytorch and pandas by `pip install pytorch pandas`
+2. Install pytorch, numpy, pandas, qt etc by `pip install -r requirement.txt`
 
 
 
 ## Usage
 
 1. Clone this repository
-2. Collected labeled dataset from actuators/motors
+2. Collected labeled dataset from actuators/motors, and save the dataset into ./app/resources
 3. Process dataset
 4. Training Model
 5. Evaluation model
@@ -27,32 +50,9 @@ actuator_net is a project to model actuators using  artificial neural network wi
 
 ### Raw data storage
 
-The raw data collected from actuators are format as a table and saved at a csv file. The file name is controlfile_data.csv.
+The raw data collected from actuators are format as a table and saved at a csv file. The file name is actuator_data.csv.
 
-Each column of the table represents a variable, such as a joint position, joint velocity, etc. each row indicates a step. For instance,
-
-```python
-    pd_data = pd.read_csv(os.path.join(raw_filepath,"controlfile_data.csv"), sep="\t",index_col=0, header=0)
-    processed_data =[] 
-    start_index = 3100
-    end_index = 8600
-    joint_indexs = [2, 3, 4, 5,  6, 7, 8, 9,  10, 11, 12, 13] # 12 joints
-    for step_idx in range(start_index, pd_data.shape[0]-start_index):
-        processed_data.append({
-        "joint_pos_target":[pd_data["jcm_"+str(joint_idx)][step_idx] for joint_idx in joint_indexs],
-        "joint_pos":[pd_data["jointPosition_"+str(joint_idx)][step_idx] for joint_idx in joint_indexs],
-        "joint_vel":[pd_data["jointVelocity_"+str(joint_idx)][step_idx] for joint_idx in joint_indexs],
-        "torques":[(pd_data["jointCurrent_"+str(joint_idx)][step_idx]*0.001)*0.86134+0.65971 for joint_idx in joint_indexs],
-        "tau_est":[(pd_data["jointCurrent_"+str(joint_idx)][step_idx]*0.001)*0.86134+0.65971 for joint_idx in joint_indexs], #mA to A, to Nm
-        #"tau_est":[0.0 for joint_idx in joint_indexs],
-        })
-     
-    result_datas = {'hardware_closed_loop':[0,processed_data]}
-
-
-```
-
-
+Each column of the table represents a variable, such as a joint position, joint velocity, etc. each row indicates a step. 
 
 
 

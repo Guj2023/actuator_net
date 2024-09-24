@@ -67,6 +67,29 @@ class Act(nn.Module):
     else:
       raise RuntimeError(f"Undefined activation called {self.act}")
 
+
+class ActuatorNet(nn.Module):
+
+    def __init__(self, in_dim, units=100, layers=4, out_dim=1,
+              act='relu', layer_norm=False, act_final=False):
+
+        super(ActuatorNet, self).__init__()
+        mods = [nn.Linear(in_dim, units), Act(act)]
+        for i in range(layers-1):
+            mods += [nn.Linear(units, units), Act(act)]
+        mods += [nn.Linear(units, out_dim)]
+        if act_final:
+            mods += [Act(act)]
+        if layer_norm:
+            mods += [nn.LayerNorm(out_dim)]
+        self.model = nn.Sequential(*mods)
+
+    def forward(self,x):
+        out = self.model(x)
+        return out
+
+
+
 class Train():
     def __init__(self, 
             data_sample_freq=100,
@@ -81,7 +104,7 @@ class Train():
         else:
             self.datafile_dir = datafile_dir
         self.load_pretrained_model = load_pretrained_model
-        self.actuator_network_path = os.path.join(datafile_dir,"actuator.pt")
+        self.actuator_network_path = os.path.join(datafile_dir,"actuator.pth")
         self.device=device
         if("epochs" in kwargs.keys()):
             self.epochs = kwargs["epochs"]
@@ -93,18 +116,6 @@ class Train():
         else:
             self.display_motor_idx = 0
 
-
-    def build_mlp(self, in_dim, units, layers, out_dim,
-              act='relu', layer_norm=False, act_final=False):
-        mods = [nn.Linear(in_dim, units), Act(act)]
-        for i in range(layers-1):
-            mods += [nn.Linear(units, units), Act(act)]
-        mods += [nn.Linear(units, out_dim)]
-        if act_final:
-            mods += [Act(act)]
-        if layer_norm:
-            mods += [nn.LayerNorm(out_dim)]
-        return nn.Sequential(*mods)
 
     def train_actuator_network(self):
         """
@@ -123,7 +134,8 @@ class Train():
         valid_loader = DataLoader(val_set, batch_size=128, shuffle=False)
         self.test_loader = DataLoader(self.test_set, batch_size=1, shuffle=False)
     
-        model = self.build_mlp(in_dim=self.xs.shape[1], 
+        model = ActuatorNet(
+                in_dim=self.xs.shape[1], 
                 units=100, layers=4, 
                 out_dim=1 if len(self.ys.shape)<2 else self.ys.shape[1], 
                 act='softsign')
@@ -175,8 +187,11 @@ class Train():
                 self.train_info = f'epoch: {epoch} | loss: {epoch_loss:.4f} | test loss: {test_loss:.4f} | mae: {mae:.4f}'
                 print(self.train_info)
     
+            # save jit script
             model_scripted = torch.jit.script(model)  # Export to TorchScript
             model_scripted.save(self.actuator_network_path)  # Save
+            # save troch 
+            torch.save(model.state_dict(), self.actuator_network_path[:-1])
         return model
 
 
@@ -195,7 +210,6 @@ class Train():
     
         self.xs = torch.tensor(rawdata["input_data"],dtype=torch.float).to(self.device)
         self.ys = torch.tensor(rawdata["output_data"],dtype=torch.float).to(self.device)
-        self.timesteps = np.array(range(self.xs.shape[0])) / self.data_sample_freq
 
         # load scaler, for testing and evaluation
         scaler_file = os.path.join(self.datafile_dir, "scaler.pkl")
@@ -241,18 +255,14 @@ class Train():
                 prediction.append(pred)
                 actual.append(batch["motor_outputs"].detach())
 
-        self.time = self.timesteps[:plot_length]
-        self.scaled_actual = torch.tensor(actual).unsqueeze(-1).cpu().detach().numpy()[:plot_length,:]
-        self.scaled_prediction = torch.tensor(prediction).unsqueeze(-1).cpu().detach().numpy()[:plot_length,:]
+        self.time = np.array(plot_length) / self.data_sample_freq
+        self.actual = torch.tensor(actual).unsqueeze(-1).cpu().detach().numpy()[:plot_length,:]
+        self.prediction = torch.tensor(prediction).unsqueeze(-1).cpu().detach().numpy()[:plot_length,:]
         self.scaled_model_input = torch.concat(model_input,dim=0).cpu().detach().numpy()[:plot_length,:]
 
-
-
-        self.actual = self.scaler.inverse_transform(np.concatenate([self.scaled_model_input,self.scaled_actual],axis=1))[:,-1]
-        self.prediction = self.scaler.inverse_transform(np.concatenate([self.scaled_model_input,self.scaled_prediction],axis=1))[:,-1]
         self.model_input = self.scaler.inverse_transform(np.concatenate([self.scaled_model_input,self.scaled_prediction],axis=1))[:,:-1]
 
-        mae=r2_score(self.scaled_actual,self.scaled_prediction)
+        mae=r2_score(self.actual,self.prediction)
         print("test mae:", mae)
 
         #plt.savefig("esti.png")
@@ -261,9 +271,9 @@ class Train():
 
 if __name__=="__main__":
     kwargs={"epochs":1000, "device":"cuda:0"}
-    datafile_dir =  "./app/"
+    datafile_dir =  "./app/resources/"
     training = Train(
-            data_sample_freq=100,
+            data_sample_freq=50,
             datafile_dir = datafile_dir,
             load_pretrained_model = False,
             **kwargs
