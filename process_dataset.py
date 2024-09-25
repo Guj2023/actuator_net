@@ -73,7 +73,6 @@ class DataProcess():
         raw_dataset = np.concatenate([input_data,output_data],axis=1)
 
         # features and labels
-
         pos_error =  raw_dataset[:,2] - raw_dataset[:,0]
         pos_error = pos_error.reshape(-1,1)
         pos_last_error = np.vstack((pos_error[0,:], pos_error[:-1,:]))
@@ -89,7 +88,7 @@ class DataProcess():
 
         label = raw_dataset[:,-1].reshape(-1,1)
 
-        feature = np.concatenate([pos_error,pos_last_error, pos_last_last_error, vel,vel_last, vel_last_last], axis=-1)
+        feature = np.concatenate([pos_error, pos_last_error, pos_last_last_error, vel, vel_last, vel_last_last], axis=-1)
 
         #2) normalizate data
         #i) normalization method
@@ -107,17 +106,19 @@ class DataProcess():
             print(e)
 
 
-        processed_data = {"input_data": scaled_feature, "output_data": label}
+        processed_data = {"input_data": feature, "output_data": label}
         print(f"input data shape: {scaled_feature.shape}")
         print(f"output data shape: {label.shape}")
 
         with open(os.path.join(self.datafile_dir,'motor_data.pkl'), 'wb') as f:
             pickle.dump(processed_data, f, protocol=pickle.HIGHEST_PROTOCOL)
         with open(os.path.join(self.datafile_dir,'scaler.pkl'),'wb') as f:
-            pickle.dump(scaler,f)
+            scaler_dict = {"use_scale": False,  "scaler": scaler}
+            pickle.dump(scaler_dict,f) # NOTE, input_data is feature rather than scaled_feature
 
         print("Process ambot motor data, data file saved at: {:}".format(os.path.join(self.datafile_dir,'motor_data.pkl')))
         print("Scaler file saved at: {:}".format(os.path.join(self.datafile_dir,'scaler.pkl')))
+        print("Use scale: {:}".format(scaler_dict["use_scale"]))
 
         """
         processed_data =[] 

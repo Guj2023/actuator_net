@@ -15,8 +15,12 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score
+#from sklearn.metrics import root_mean_squared_error # only supported from scikit-learn 1.4.0 and python3.9
+
 
 from torch.optim import Adam
+
+
 
 class ActuatorDataset(Dataset):
     def __init__(self, data):
@@ -89,6 +93,70 @@ class ActuatorNet(nn.Module):
         return out
 
 
+class EarlyStopping:
+
+    """Early stops the training if validation loss doesn't improve after a given patience."""
+    def __init__(self, save_path, patience=7, verbose=False, delta=0):
+        """
+        Args:
+            save_path : 模型保存文件夹
+            patience (int): How long to wait after last time validation loss improved.
+                            Default: 7
+            verbose (bool): If True, prints a message for each validation loss improvement.
+                            Default: False
+            delta (float): Minimum change in the monitored quantity to qualify as an improvement.
+                            Default: 0
+        """
+        self.save_path = save_path
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.best_acc = None
+        self.early_stop = False
+        self.val_loss_min = np.Inf
+        self.delta = delta
+
+    def __call__(self, val_loss, val_acc, model):
+
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+            self.best_acc = val_acc
+            self.save_checkpoint(val_loss, model)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.best_acc = val_acc
+            self.save_checkpoint(val_loss, model)
+            self.counter = 0
+
+    def save_checkpoint(self, val_loss, model):
+        '''Saves model when validation loss decrease.'''
+        if self.verbose:
+            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+        # save torch model state_dict
+        path = os.path.join(self.save_path, 'actuator.pt')
+        torch.save(model.state_dict(), path)	# 这里会存储迄今最优模型的参数
+        self.val_loss_min = val_loss
+
+        # save torch.jit.scrpts model
+        model_scripted = torch.jit.script(model)  # Export to TorchScript
+        model_scripted.save(os.path.join(self.save_path,"actuator.pth"))  # Save
+
+
+
+
+
+
+
+
+
 
 class Train():
     def __init__(self, 
@@ -104,7 +172,7 @@ class Train():
         else:
             self.datafile_dir = datafile_dir
         self.load_pretrained_model = load_pretrained_model
-        self.actuator_network_path = os.path.join(datafile_dir,"actuator.pth")
+        self.actuator_network_path = os.path.join(self.datafile_dir,"actuator.pth")
         self.device=device
         if("epochs" in kwargs.keys()):
             self.epochs = kwargs["epochs"]
@@ -123,16 +191,6 @@ class Train():
         """
         print("model input dim: {} and output dim: {}".format( self.xs.shape, self.ys.shape))
     
-        num_data = self.xs.shape[0]
-        num_train = num_data // 5 * 4
-        num_test = 500
-        num_valid = num_data - num_train -num_test
-    
-        dataset = ActuatorDataset({"motor_states": self.xs, "motor_outputs": self.ys})
-        train_set, val_set, self.test_set = torch.utils.data.random_split(dataset, [num_train, num_valid, num_test])
-        train_loader = DataLoader(train_set, batch_size=128, shuffle=False)
-        valid_loader = DataLoader(val_set, batch_size=128, shuffle=False)
-        self.test_loader = DataLoader(self.test_set, batch_size=1, shuffle=False)
     
         model = ActuatorNet(
                 in_dim=self.xs.shape[1], 
@@ -142,12 +200,14 @@ class Train():
     
         lr = 8e-4
         opt = Adam(model.parameters(), lr=lr, eps=1e-8, weight_decay=0.0)
+
+        early_stop = EarlyStopping(save_path=self.datafile_dir, patience=10, verbose=True)
     
         model = model.to(self.device)
         for epoch in range(self.epochs):
             epoch_loss = 0
             ct = 0
-            for batch in train_loader:
+            for batch in self.train_loader:
                 data = batch['motor_states'].to(self.device)
 
                 y_pred = model(data)
@@ -165,33 +225,30 @@ class Train():
                 ct += 1
             epoch_loss /= ct
     
-            test_loss = 0
-            mae = 0
+            valid_loss = 0
+            valid_r2 = 0
             ct = 0
             if epoch % 1 == 0:
                 with torch.no_grad():
-                    for batch in valid_loader:
+                    for batch in self.valid_loader:
                         data = batch['motor_states'].to(self.device)
                         y_pred = model(data)
                         y_label = batch['motor_outputs'].to(self.device)
-                        tau_est_loss = ((y_pred - y_label) ** 2).mean()
-                        loss = tau_est_loss
-                        test_mae = (y_pred - y_label).abs().mean()
-    
-                        test_loss += loss
-                        mae += test_mae
-                        ct += 1
-                    test_loss /= ct
-                    mae /= ct
+                        valid_loss += ((y_pred - y_label) ** 2).mean()
+                        #valid_loss+=root_mean_squared_error(y_label, y_pred)
+                        valid_r2 += r2_score(y_label.cpu(), y_pred.cpu())
+                        ct+=1
                 
-                self.train_info = f'epoch: {epoch} | loss: {epoch_loss:.4f} | test loss: {test_loss:.4f} | mae: {mae:.4f}'
+                valid_loss /=ct
+                valid_r2 /=ct
+                self.train_info = f'epoch: {epoch} | train loss: {epoch_loss:.4f} | valid loss: {valid_loss:.4f} | valid_r2: {valid_r2:.4f}'
                 print(self.train_info)
-    
-            # save jit script
-            model_scripted = torch.jit.script(model)  # Export to TorchScript
-            model_scripted.save(self.actuator_network_path)  # Save
-            # save troch 
-            torch.save(model.state_dict(), self.actuator_network_path[:-1])
+
+
+            early_stop(valid_loss, valid_r2, model)
+            if early_stop.early_stop:
+                break
+
         return model
 
 
@@ -211,6 +268,7 @@ class Train():
         self.xs = torch.tensor(rawdata["input_data"],dtype=torch.float).to(self.device)
         self.ys = torch.tensor(rawdata["output_data"],dtype=torch.float).to(self.device)
 
+    
         # load scaler, for testing and evaluation
         scaler_file = os.path.join(self.datafile_dir, "scaler.pkl")
         if(os.path.exists(scaler_file)):
@@ -219,9 +277,25 @@ class Train():
             print("{:} does not exist".format(scaler_file))
             exit()
         with open(scaler_file,"rb") as fd:
-            self.scaler = pkl.load(fd)
+            scaler_dict = pkl.load(fd)
+            self.scaler = scaler_dict["scaler"]
+            self.use_scale = scaler_dict["use_scale"]
+            print(f"Use scale: {self.use_scale}")
 
+
+        # make dataloader
+        num_data = self.xs.shape[0]
+        num_train = num_data // 5 * 4
+        num_test = 500
+        num_valid = num_data - num_train -num_test
     
+        dataset = ActuatorDataset({"motor_states": self.xs, "motor_outputs": self.ys})
+        train_set, val_set, test_set = torch.utils.data.random_split(dataset, [num_train, num_valid, num_test])
+        self.train_loader = DataLoader(train_set, batch_size=128, shuffle=False)
+        self.valid_loader = DataLoader(val_set, batch_size=128, shuffle=False)
+        self.test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
+
+
     def training_model(self):
         """
         Training model
@@ -230,7 +304,7 @@ class Train():
     
         # training model
         if self.load_pretrained_model:
-            self.model = torch.jit.load(self.actuator_network_path).to(self.device)
+            self.model = torch.jit.load(self.actuator_network_path).to("cpu")
         else:
             self.model = self.train_actuator_network().to(self.device)
     
@@ -244,28 +318,28 @@ class Train():
     
         plot_length = 450
         model_input = []
-        prediction = []
+        estimation = []
         actual = []
 
         with torch.no_grad():
             for batch in self.test_loader:
                 x = batch["motor_states"]
+                if self.load_pretrained_model:
+                    x=x.to("cpu") # jit scripted model only can work on cpu
                 pred = self.model(x).detach()
                 model_input.append(x)
-                prediction.append(pred)
+                estimation.append(pred)
                 actual.append(batch["motor_outputs"].detach())
 
-        self.time = np.array(plot_length) / self.data_sample_freq
+
+        self.time = np.arange(plot_length) / self.data_sample_freq
         self.actual = torch.tensor(actual).unsqueeze(-1).cpu().detach().numpy()[:plot_length,:]
-        self.prediction = torch.tensor(prediction).unsqueeze(-1).cpu().detach().numpy()[:plot_length,:]
+        self.estimation = torch.tensor(estimation).unsqueeze(-1).cpu().detach().numpy()[:plot_length,:]
         self.scaled_model_input = torch.concat(model_input,dim=0).cpu().detach().numpy()[:plot_length,:]
 
-        self.model_input = self.scaler.inverse_transform(np.concatenate([self.scaled_model_input,self.scaled_prediction],axis=1))[:,:-1]
 
-        mae=r2_score(self.actual,self.prediction)
-        print("test mae:", mae)
-
-        #plt.savefig("esti.png")
+        mae=r2_score(self.actual,self.estimation)
+        print("test r2 score:", mae)
 
 
 
@@ -285,7 +359,7 @@ if __name__=="__main__":
 
     import matplotlib.pyplot as plt
     plt.plot(training.time, training.actual, label="actual",color='r')
-    plt.plot(training.time, training.prediction, label="prediction",color='g')
+    plt.plot(training.time, training.estimation, label="estimation",color='g')
     plt.legend()
     plt.show()
 

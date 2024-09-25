@@ -4,8 +4,10 @@ import os
 import os.path as osp
 import pickle as pkl
 from train import ActuatorNet
+from sklearn.metrics import r2_score
 
-def load_model(model_path, scaler, device="cpu", num_envs=1, num_actions=12):
+
+def load_model( model_path, scaler, use_scale=False, device="cpu", num_envs=1, num_actions=12):
 
     if "pth" == model_path[-3:]:
         actuator_net = torch.jit.load(model_path, map_location=torch.device(device))
@@ -18,27 +20,34 @@ def load_model(model_path, scaler, device="cpu", num_envs=1, num_actions=12):
 
     num_envs = num_envs
     num_actions = num_actions
+    print(f"use scale: {use_scale}")
+
 
     def eval_actuator_network(joint_pos, joint_pos_last, joint_pos_last_last, 
                                   joint_vel, joint_vel_last, joint_vel_last_last):
 
-        scaled_inputs = scaler.transform(torch.concat([joint_pos.unsqueeze(-1), 
-                                                      joint_pos_last.unsqueeze(-1), 
+        inputs = torch.concat([joint_pos.unsqueeze(-1), joint_pos_last.unsqueeze(-1), 
                                                       joint_pos_last_last.unsqueeze(-1),
                                                       joint_vel.unsqueeze(-1), 
                                                       joint_vel_last.unsqueeze(-1),
                                                       joint_vel_last_last.unsqueeze(-1), 
-                                                      ],axis=-1).view(num_envs*num_actions,6).cpu())
-        scaled_inputs = torch.tensor(scaled_inputs, dtype=torch.float32, device=device)
-        torques = actuator_net(scaled_inputs.view(num_envs,num_actions, 6)).view(num_envs, num_actions)
+                                                      ],axis=-1).view(num_envs*num_actions,6).to(device).type(torch.float32)
+
+        if use_scale:
+            scaled_inputs = scaler.transform(inputs)
+            inputs = torch.tensor(scaled_inputs, dtype=torch.float32, device=device)
+
+        torques = actuator_net(inputs.view(num_envs,num_actions, 6)).view(num_envs, num_actions)
 
         return torques.reshape(num_envs, num_actions)
 
     return eval_actuator_network
 
+    
+    
 
 
-def load_data(datafile_dir,device="cpu"):
+def load_data(datafile_dir, device="cpu"):
 
     #0) load raw data
     # checking data file path
@@ -75,10 +84,12 @@ def load_data(datafile_dir,device="cpu"):
     else:
         print("{:} does not exist".format(scaler_file))
         exit()
-    with open(scaler_file,"rb") as fd:
-        scaler = pkl.load(fd)
+    with open(scaler_file, "rb") as fd:
+        scaler_dict = pkl.load(fd)
+        scaler = scaler_dict["scaler"]
+        use_scale = scaler_dict["use_scale"]
 
-    return (xs,ys), scaler, pd_data
+    return (xs,ys), scaler, pd_data, use_scale
 
 
 import numpy as np
@@ -91,11 +102,11 @@ if __name__ == '__main__':
     num_actions = 11
 
     # 1) load dataset and scaler
-    dataset, scaler, rawdata = load_data(os.path.dirname(model_path),device)
+    dataset, scaler, rawdata, use_scale = load_data(os.path.dirname(model_path),device)
 
 
     # 2) load model, please specify your model path correctly, since jit script issue, load the model on cpu
-    actuator_network = load_model(model_path, scaler, device="cpu", num_actions=num_actions)
+    actuator_network = load_model(model_path, scaler, use_scale=use_scale, device="cpu", num_actions=num_actions)
 
     # 3) parameters
     joint_pos_err_last_last = torch.zeros((num_envs, num_actions), device=device)
@@ -115,6 +126,7 @@ if __name__ == '__main__':
             dof_vel = np.array([rawdata["motorStateVel_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions)
             joint_pos_target = np.array([rawdata["motorAction_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions)
             actual_torques.append(np.array([rawdata["motorStateCur_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions))
+
             dof_pos = torch.tensor(dof_pos,device=device).view(num_envs,num_actions).view(num_envs,num_actions)
             dof_vel = torch.tensor(dof_vel,device=device).view(num_envs,num_actions).view(num_envs,num_actions)
             joint_pos_target = torch.tensor(joint_pos_target,device=device).view(num_envs,num_actions)
@@ -122,7 +134,9 @@ if __name__ == '__main__':
             joint_pos_err = joint_pos_target - dof_pos  
             joint_vel = dof_vel
 
-            estimated_torques.append(actuator_network(joint_pos_err, joint_pos_err_last, joint_pos_err_last_last, joint_vel, joint_vel_last, joint_vel_last_last))
+            torques = actuator_network(joint_pos_err, joint_pos_err_last, joint_pos_err_last_last, joint_vel, joint_vel_last, joint_vel_last_last)
+
+            estimated_torques.append(torques)
             joint_pos_err_last_last = torch.clone(joint_pos_err_last)
             joint_pos_err_last = torch.clone(joint_pos_err)
             joint_vel_last_last = torch.clone(joint_vel_last)
@@ -132,8 +146,13 @@ if __name__ == '__main__':
 
 
     import matplotlib.pyplot as plt
-    plt.plot([s[0][7] for s in actual_torques], label="actual",color='r')
-    plt.plot([s[0][7].cpu() for s in estimated_torques], label="prediction",color='g')
+    action_idx = 9
+    actual = np.array([s[0][action_idx] for s in actual_torques])
+    estimation = np.array([s[0][action_idx].cpu() for s in estimated_torques])
+    r2 = r2_score(actual, estimation)
+    print("test r2 score:", r2)
+    plt.plot(actual, label="actual",color='r')
+    plt.plot(estimation, label="estimation",color='g')
     plt.legend()
     plt.show()
 
