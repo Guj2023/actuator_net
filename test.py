@@ -97,7 +97,7 @@ if __name__ == '__main__':
     
     # 0) hyper params
     model_path = osp.join("./app/resources","actuator.pth") # jit scripted model
-    device ="cuda:0"
+    device ="cpu"
     num_envs = 1
     num_actions = 11
 
@@ -117,21 +117,28 @@ if __name__ == '__main__':
     actual_torques = []
     estimated_torques = []
 
+    dof_pos_list = []
+    dof_vel_list = []
+    dof_pos_desired_list = []
 
-    for idx in range(300): 
+    for idx in range(100): 
         #3) inference
         with torch.no_grad():
             
             dof_pos = np.array([rawdata["motorStatePos_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions)
             dof_vel = np.array([rawdata["motorStateVel_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions)
-            joint_pos_target = np.array([rawdata["motorAction_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions)
+            dof_pos_desired = np.array([rawdata["motorAction_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions)
             actual_torques.append(np.array([rawdata["motorStateCur_"+str(i)][idx] for i in range(num_actions)]).reshape(num_envs,num_actions))
+
+            dof_pos_list.append(dof_pos)
+            dof_vel_list.append(dof_vel)
+            dof_pos_desired_list.append(dof_pos_desired)
 
             dof_pos = torch.tensor(dof_pos,device=device).view(num_envs,num_actions).view(num_envs,num_actions)
             dof_vel = torch.tensor(dof_vel,device=device).view(num_envs,num_actions).view(num_envs,num_actions)
-            joint_pos_target = torch.tensor(joint_pos_target,device=device).view(num_envs,num_actions)
+            dof_pos_desired = torch.tensor(dof_pos_desired,device=device).view(num_envs,num_actions)
 
-            joint_pos_err = joint_pos_target - dof_pos  
+            joint_pos_err = dof_pos_desired - dof_pos  
             joint_vel = dof_vel
 
             torques = actuator_network(joint_pos_err, joint_pos_err_last, joint_pos_err_last_last, joint_vel, joint_vel_last, joint_vel_last_last)
@@ -149,10 +156,21 @@ if __name__ == '__main__':
     action_idx = 9
     actual = np.array([s[0][action_idx] for s in actual_torques])
     estimation = np.array([s[0][action_idx].cpu() for s in estimated_torques])
+
+    dof_pos = np.array(dof_pos_list)
+    dof_vel = np.array(dof_vel_list)
+    dof_pos_desired = np.array(dof_pos_desired_list)
+    calculation = 30 * (dof_pos_desired-dof_pos) -0.3*dof_vel
+    calculation  = calculation[:,0,action_idx]
+
     r2 = r2_score(actual, estimation)
-    print("test r2 score:", r2)
-    plt.plot(actual, label="actual",color='r')
-    plt.plot(estimation, label="estimation",color='g')
+    cal_r2 = r2_score(actual, calculation)
+    print("test r2 score:", r2, "calculation:", cal_r2)
+
+    plt.plot(actual, label="actual",color='k')
+    plt.plot(estimation, label="estimation",color='r')
+    plt.plot(calculation, label="calculation",color='b')
+    plt.grid()
     plt.legend()
     plt.show()
 
