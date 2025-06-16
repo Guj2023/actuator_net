@@ -41,7 +41,7 @@ The training code refers to (!walk-these-way)[https://github.com/Improbable-AI/w
 
 ## Installation
 
-1. Prepare a python virtual env with python3.8 or later
+1. Prepare a python virtual env with python3.11.0
 2. Install pytorch, numpy, pandas, qt etc by `pip install -r requirement.txt`
 
 
