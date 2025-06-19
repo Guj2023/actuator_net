@@ -7,9 +7,12 @@ import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from sklearn.metrics import r2_score
+import pdb
+import torch.jit
 
 # from sklearn.metrics import root_mean_squared_error # only supported from scikit-learn 1.4.0 and python3.9
 
@@ -108,7 +111,7 @@ class ActuatorNet(nn.Module):
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
 
-    def __init__(self, save_path, patience=7, verbose=False, delta=0):
+    def __init__(self, save_path, patience=13, verbose=False, delta=0):
         """
         Args:
             save_path : Directory to save the model.
@@ -215,7 +218,7 @@ class Train:
         opt = Adam(model.parameters(), lr=lr, eps=1e-8, weight_decay=0.0)
 
         early_stop = EarlyStopping(
-            save_path=self.datafile_dir, patience=10, verbose=True
+            save_path=self.datafile_dir, patience=14, verbose=False
         )
 
         model = model.to(self.device)
@@ -267,7 +270,7 @@ class Train:
 
     def load_data(self):
         # 1) load data
-        data_path = os.path.join(self.datafile_dir, "motor_data.pkl")
+        data_path = os.path.join(self.datafile_dir, "hydraulic_actuator.pkl")
         if os.path.exists(data_path):
             print("data file path:", data_path)
         else:
@@ -276,7 +279,9 @@ class Train:
         with open(data_path, "rb") as fd:
             rawdata = pkl.load(fd)
 
-        self.xs = torch.tensor(rawdata["input_data"], dtype=torch.float).to(self.device)
+        self.xs = torch.tensor(rawdata["scaled_input_data"], dtype=torch.float).to(
+            self.device
+        )
         self.ys = torch.tensor(rawdata["output_data"], dtype=torch.float).to(
             self.device
         )
@@ -296,14 +301,25 @@ class Train:
 
         # make dataloader
         num_data = self.xs.shape[0]
-        num_train = num_data // 5 * 4
-        num_test = 500
-        num_valid = num_data - num_train - num_test
+        num_test = 2000
 
         dataset = ActuatorDataset({"motor_states": self.xs, "motor_outputs": self.ys})
-        train_set, val_set, test_set = torch.utils.data.random_split(
-            dataset, [num_train, num_valid, num_test]
+        # Split dataset by index instead of random_split
+        test_set = torch.utils.data.Subset(
+            dataset,
+            list(range(0, num_test)),
         )
+        # Use random_split for train and validation sets
+        remaining_set = torch.utils.data.Subset(
+            dataset, list(range(num_test, num_data))
+        )
+        num_remaining = num_data - num_test
+        train_len = num_remaining * 4 // 5
+        val_len = num_remaining - train_len
+        train_set, val_set = torch.utils.data.random_split(
+            remaining_set, [train_len, val_len]
+        )
+
         self.train_loader = DataLoader(train_set, batch_size=128, shuffle=False)
         self.valid_loader = DataLoader(val_set, batch_size=128, shuffle=False)
         self.test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
@@ -326,7 +342,7 @@ class Train:
 
         """
 
-        plot_length = 450
+        plot_length = 2000
         model_input = []
         estimation = []
         actual = []
@@ -340,6 +356,14 @@ class Train:
                 model_input.append(x)
                 estimation.append(pred)
                 actual.append(batch["motor_outputs"].detach())
+
+        # Save the trained model for later use (as state dict, not TorchScript)
+        model_save_path = os.path.join(self.datafile_dir, "actuator_eval_model.pth")
+        if hasattr(self, "model") and not self.load_pretrained_model:
+            # Save as TorchScript
+            scripted_model = torch.jit.script(self.model.cpu())
+            scripted_model.save(model_save_path)
+            print(f"TorchScript model saved to {model_save_path}")
 
         self.time = np.arange(plot_length) / self.data_sample_freq
         self.actual = (
@@ -355,16 +379,16 @@ class Train:
         self.scaled_model_input = (
             torch.concat(model_input, dim=0).cpu().detach().numpy()[:plot_length, :]
         )
-
+        pdb.set_trace()
         mae = r2_score(self.actual, self.estimation)
         print("test r2 score:", mae)
 
 
 if __name__ == "__main__":
-    kwargs = {"epochs": 1000, "device": "cuda:0"}
+    kwargs = {"epochs": 200, "device": "cuda:0"}
     datafile_dir = "./app/resources/"
     training = Train(
-        data_sample_freq=50,
+        data_sample_freq=1,
         datafile_dir=datafile_dir,
         load_pretrained_model=False,
         **kwargs,
@@ -374,7 +398,7 @@ if __name__ == "__main__":
     training.training_model()
     training.eval_model()
 
-    plt.plot(training.time, training.actual, label="actual", color="r")
-    plt.plot(training.time, training.estimation, label="estimation", color="g")
+    plt.plot(training.time, training.actual, label="actual", color="black")
+    plt.plot(training.time, training.estimation, label="estimation", color="red")
     plt.legend()
     plt.show()

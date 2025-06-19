@@ -48,22 +48,9 @@ The training code refers to (!walk-these-way)[https://github.com/Improbable-AI/w
 
 ## Usage
 
-1. Clone this repository
-2. Collected labeled dataset from actuators/motors, and save the dataset into ./app/resources
-3. open the App by ``` cd ./app && python main.py ```
-4. Process dataset
-5. Training Model
-6. Evaluation model
 
-
-
-### Raw data storage
-
-The raw data collected from actuators are format as a table and saved at a csv file. The file name is actuator_data.csv.
-
-Each column of the table represents a variable, such as a joint position, joint velocity, etc. each row indicates a step. 
-
-
-
+### Script
+    1. Run extract.py, clean dataset from .mat to .pkl
+    2. Run train.py to start training.
 
 

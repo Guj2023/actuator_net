@@ -1,0 +1,32 @@
+# Ignore everything under the resources directory
+resources/
+
+# Python cache and runtime files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment directories
+env/
+venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Log files
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Other common runtime files
+*.sqlite3
+*.db
+*.pid
+*.tmp
+*.swp
+*.bak
+*.old
